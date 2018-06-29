@@ -37,5 +37,9 @@
 	<array>
 		<string>MKDirectionsModeCar</string>
 	</array>
+	<key>NSCalendarsUsageDescription</key>
+	<string>We need you calendar</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need access to your photo library if you want to snapshot the map</string>
 </dict>
 </plist>

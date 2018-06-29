@@ -6,6 +6,8 @@ using UIKit;
 using CoreGraphics;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Plugin.Permissions;
+using Plugin.Permissions.Abstractions;
 
 namespace MapkitDirections {
 
@@ -20,8 +22,14 @@ namespace MapkitDirections {
                                                                        NSSearchPathDomain.User)[0].Path;
 
 
-    private MKMapView _map;
-    private MKMapViewDelegate _mapDelegate;
+    CLLocationCoordinate2D origin_latlong;
+    CLLocationCoordinate2D destination_latlong;
+
+    BasicMapAnnotation start_pin;
+    BasicMapAnnotation finish_pin;
+
+    MKMapView map_view;
+    MKMapViewDelegate _mapDelegate;
 
     MKPlacemark orignPlaceMark;
     MKPlacemark destPlaceMark;
@@ -46,7 +54,7 @@ namespace MapkitDirections {
       NavigationItem.Title = "MapKit Sample";
 
       //Init Map
-      _map = new MKMapView {
+      map_view = new MKMapView {
         MapType = MKMapType.Standard,
         ShowsUserLocation = true,
         ZoomEnabled = true,
@@ -62,9 +70,9 @@ namespace MapkitDirections {
 
           using (var snapShotOptions = new MKMapSnapshotOptions())
           {
-            snapShotOptions.Region = _map.Region;
+            snapShotOptions.Region = map_view.Region;
             snapShotOptions.Scale = UIScreen.MainScreen.Scale;
-            snapShotOptions.Size = _map.Frame.Size;
+            snapShotOptions.Size = map_view.Frame.Size;
 
             using (var snapShot = new MKMapSnapshotter(snapShotOptions))
             {
@@ -72,15 +80,18 @@ namespace MapkitDirections {
               {
                 if (error == null)
                 {
-                  snapshot.Image.SaveToPhotosAlbum(
-                    (uiimage, imgError) =>
-                    {
-                      if (imgError == null)
-                      {
-                        new UIAlertView("Image Saved", "Map View Image Saved!", null, "OK", null).Show();
-                      }
-
-                    });
+                  Task.Run(async () => {
+                    var allowed =await GetAlbumPermission();
+                    if (allowed) {
+                      snapshot.Image.SaveToPhotosAlbum(
+                        (uiimage, imgError) =>
+                        {
+                          if (imgError == null)
+                          {
+                            DisplayAlert("Image Saved", "Map View Image Saved!");
+                          }
+                        });
+                    }});
                 }
               });
             }
@@ -94,15 +105,14 @@ namespace MapkitDirections {
           InitialZoomDelta += 0.1;
           InitialZoomSpan = new MKCoordinateSpan(InitialZoomDelta, InitialZoomDelta);
           var newRegion = new MKCoordinateRegion(orignPlaceMark.Coordinate, InitialZoomSpan);
-          _map.SetRegion(newRegion, true);
+          map_view.SetRegion(newRegion, true);
         }),
         new UIBarButtonItem(UIBarButtonSystemItem.FastForward, (sender, e) => {
           InitialZoomDelta -= 0.1;
           InitialZoomSpan = new MKCoordinateSpan(InitialZoomDelta, InitialZoomDelta);
           var newRegion = new MKCoordinateRegion(orignPlaceMark.Coordinate, InitialZoomSpan);
-          _map.SetRegion(newRegion, true);
+          map_view.SetRegion(newRegion, true);
         }),
-
       }, false);
 
       this.NavigationController.ToolbarHidden = false;
@@ -111,9 +121,9 @@ namespace MapkitDirections {
       _mapDelegate = new MapDelegate();
 
       //Add delegate to map
-      _map.Delegate = _mapDelegate;
+      map_view.Delegate = _mapDelegate;
 
-      View = _map;
+      View = map_view;
 
       //Create Directions
       CreateRoute();
@@ -129,7 +139,6 @@ namespace MapkitDirections {
         GeocodeToConsoleAsync("1 THE PLACE PENRITH 2750");
         GeocodeToConsoleAsync("103/5 CELEBRATION DRIVE BELLA VISTA 2153");
         GeocodeToConsoleAsync("123 BOB ROAD BOBS FARM 2316");
-        GeocodeToConsoleAsync("123 Bob road BOBS FARM 2316");
         GeocodeToConsoleAsync("123 The Road PENRITH 2750");
         GeocodeToConsoleAsync("16A HILL ST BLAYNEY 2799");
         GeocodeToConsoleAsync("3 Packard Ave CASTLE HILL 2154");
@@ -142,24 +151,44 @@ namespace MapkitDirections {
       //Create Origin and Dest Place Marks and Map Items to use for directions
 
       //Start at Vantage Office Norwest
-      orignPlaceMark = new MKPlacemark(new CLLocationCoordinate2D(-33.732711, 150.9618983));
-      var sourceItem = new MKMapItem(orignPlaceMark);
+      origin_latlong = new CLLocationCoordinate2D(-33.732711, 150.9618983);
 
-      //End at Xamarin Cambridge Office
-      //6 Forest Knoll
-      destPlaceMark = new MKPlacemark(new CLLocationCoordinate2D(-33.7359329, 151.0179703));
+      //19A Cook Street Baulkham Hills 2153
+      destination_latlong = new CLLocationCoordinate2D(-33.762764, 150.9987214);
+
+      //6 Forest Knoll Castle Hill
+      destination_latlong = new CLLocationCoordinate2D(-33.7359772, 151.0202179);
 
       //Sydney Opera House
-      destPlaceMark = new MKPlacemark(new CLLocationCoordinate2D(-33.8567844, 151.2131027));
+      destination_latlong = new CLLocationCoordinate2D(-33.8567844, 151.2131027);
 
       //Sydney International Airport
-      destPlaceMark = new MKPlacemark(new CLLocationCoordinate2D(-33.9353852, 151.1633858));
+      destination_latlong = new CLLocationCoordinate2D(-33.9353852, 151.1633858);
+
+      //ON Stationers Rockdale
+      destination_latlong = new CLLocationCoordinate2D(-33.9604298, 151.1425861);
 
 
-      destPlaceMark = new MKPlacemark(new CLLocationCoordinate2D(-33.9604298, 151.1425861));
+      orignPlaceMark = new MKPlacemark(origin_latlong);
+      destPlaceMark = new MKPlacemark(destination_latlong);
 
-
+      var sourceItem = new MKMapItem(orignPlaceMark);
       var destItem = new MKMapItem(destPlaceMark);
+
+      if (start_pin != null) {
+        map_view.RemoveAnnotation(start_pin);
+      }
+
+      if (finish_pin != null) {
+        map_view.RemoveAnnotation(finish_pin);
+      }
+
+      start_pin = new BasicMapAnnotation(origin_latlong, "Start", "This is where we start");
+      map_view.AddAnnotation(start_pin);
+
+      finish_pin = new BasicMapAnnotation(destination_latlong, "Finish", "You have reached your destination");
+      map_view.AddAnnotation(finish_pin);
+
 
       //Create Directions request using the source and dest items
       var request = new MKDirectionsRequest {
@@ -177,7 +206,7 @@ namespace MapkitDirections {
         } else {
 
           var newRegion = new MKCoordinateRegion(orignPlaceMark.Coordinate, InitialZoomSpan);
-          _map.SetRegion(newRegion, true);
+          map_view.SetRegion(newRegion, true);
 
           Console.WriteLine($"_________________________________________________________________________________________");
           Console.WriteLine($"We found {response.Routes.Length} routes:");
@@ -189,7 +218,7 @@ namespace MapkitDirections {
 
           //Add each polyline from route to map as overlay
           foreach (var route in response.Routes) {
-            _map.AddOverlay(route.Polyline);
+            map_view.AddOverlay(route.Polyline);
 
             Console.WriteLine($"_________________________________________________________________________________________");
             Console.WriteLine($"ROUTE INSTRUCTIONS:  {route.Name}   {route.Distance}m  {route.ExpectedTravelTime}seconds");
@@ -212,6 +241,20 @@ namespace MapkitDirections {
           }
         }
       });
+
+
+    }
+
+    class BasicMapAnnotation : MKAnnotation {
+      public override CLLocationCoordinate2D Coordinate { get; }
+      string title, subtitle;
+      public override string Title { get { return title; } }
+      public override string Subtitle { get { return subtitle; } }
+      public BasicMapAnnotation(CLLocationCoordinate2D coordinate, string title, string subtitle) {
+        this.Coordinate = coordinate;
+        this.title = title;
+        this.subtitle = subtitle;
+      }
     }
 
     class MapDelegate : MKMapViewDelegate {
@@ -234,10 +277,46 @@ namespace MapkitDirections {
         foreach (var placemark in placemarks) {
           Console.WriteLine($"{address} : {placemark.Location.Coordinate.ToString()}");
         }
-      } catch (Exception ex) {
+      } catch {
         Console.WriteLine($"{address} : Not found");
       }
     }
 
+
+    async Task<bool> GetAlbumPermission() {
+      var result = false;
+      try {
+
+        var status = await CrossPermissions.Current.CheckPermissionStatusAsync(Permission.Photos);
+        if (status != PermissionStatus.Granted) {
+          if (await CrossPermissions.Current.ShouldShowRequestPermissionRationaleAsync(Permission.Photos)) {
+            DisplayAlert("Need photos", "Gunna need that access to photos");
+          }
+
+          var results = await CrossPermissions.Current.RequestPermissionsAsync(Permission.Photos);
+          //Best practice to always check that the key exists
+          if (results.ContainsKey(Permission.Photos))
+            status = results[Permission.Photos];
+        }
+
+        if (status == PermissionStatus.Granted) {
+          result = true;
+        } else if (status != PermissionStatus.Unknown) {
+          result = false;
+        }
+      } catch (Exception ex) {
+        Console.WriteLine($"Error getting Photos permission: {ex}");
+        result = false;
+      }
+      return result;
+    }
+
+    void DisplayAlert(string title, string message) {
+      this.View.InvokeOnMainThread(() => {
+        using (var alert = UIAlertController.Create(title, message, UIAlertControllerStyle.Alert)) {
+          this.PresentViewController(alert, true, null);
+        }
+      });
+    }
   }
 }
